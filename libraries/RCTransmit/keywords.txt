@@ -1,0 +1,7 @@
+RCTransmit	KEYWORD1
+
+setProtocol		KEYWORD2
+setPulseLength		KEYWORD2
+setRepeatTransmit	KEYWORD2
+switchOn		KEYWORD2
+switchOff		KEYWORD2
