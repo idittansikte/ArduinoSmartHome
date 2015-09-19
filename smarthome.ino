@@ -35,7 +35,7 @@
 #define transmitPin 10
 
 /*
- * CACHE_SIZE can't be more than 220. If it is the cache 
+ * CACHE_SIZE can't be more than 550. If it is the cache 
  * won't fit in the EEPROM.
  */
 #define CACHE_SIZE 200
@@ -71,7 +71,7 @@ void setup()
   transmit.setRepeatTransmit(6);
   // Init cahc and load switchen from EEPROM into it
   initCache();
-  loadswitch_cacheFromMemory();
+  loadSwitchesFromMemory();
   Serial.println("Cache initialized!");
   Serial.println("Setup finished!");
 }
@@ -163,7 +163,7 @@ void executeRequest(EthernetClient* client, char* request)
 	if(addSwitch(atoi(strtok_r(request, ":", &request))))
 	  {
 	    sendResponse(client, "OK");
-	    saveswitch_cacheToMemory();
+	    saveSwitchesToMemory();
 	  }
 	else
 	  {
@@ -176,7 +176,7 @@ void executeRequest(EthernetClient* client, char* request)
 	if(removeSwitch(atoi(strtok_r(request, ":", &request))))
 	  {
 	    sendResponse(client, "OK");
-	    saveswitch_cacheToMemory();
+	    saveSwitchesToMemory();
 	  }
 	else
 	  {
@@ -230,7 +230,7 @@ boolean addSwitch(int controller)
       if(switch_cache[pos].controller == controller)
       {
          Serial.println("Controller already exist.");
-         return true; 
+         return false; 
       }
     }
     
@@ -257,12 +257,13 @@ boolean removeSwitch(int controller)
   int position = 0;
   for(; position < CACHE_SIZE; ++position)
     {
-      if(switch_cache[position].controller == controller) // If empty
+      if(switch_cache[position].controller == controller) // If found 
 	{
-	  switch_cache[position].controller = -1;
+	  switch_cache[position].controller = -1; // Remove it
 	  return true;
 	}
     }
+    // If not f
   return false;
 }
 
@@ -289,7 +290,7 @@ String cacheToString()
  * Save switch_cache in cache into EEPROM
  * This is done when any changes have been done to cache.
  */
-void saveswitch_cacheToMemory()
+void saveSwitchesToMemory()
 {
   int addr = 1; // Current EEPROM address
   int position = 0; // Array position
@@ -309,7 +310,7 @@ void saveswitch_cacheToMemory()
  * Load switch_cache in EEPROM into cache.
  * This should only be done at setup state.
  */
-void loadswitch_cacheFromMemory()
+void loadSwitchesFromMemory()
 {
   int count = EEPROM.read(0); // How many switch_cache in memory
   int addr = 1; // Current EEPROM address
