@@ -184,6 +184,11 @@ void executeRequest(EthernetClient* client, char* request)
 	  }
 	break;
       } 
+      case 'C': // Check connectivity
+      {
+         sendResponse(client, "OK");
+         break;
+      }
     default:
       {
 	sendResponse(client, "NO SUCH COMMAND EXIST");
