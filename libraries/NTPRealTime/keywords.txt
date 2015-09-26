@@ -1,0 +1,19 @@
+#######################################
+# Syntax Coloring Map For Time
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+NTPRealTime	KEYWORD1
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+init	KEYWORD2
+setSyncInterval	KEYWORD2
+setTimeZone	KEYWORD2
+summertime	KEYWORD2
+getHour	KEYWORD2
+getMin	KEYWORD2
+getSec	KEYWORD2
+now	KEYWORD2

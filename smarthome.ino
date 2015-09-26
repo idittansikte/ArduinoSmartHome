@@ -31,6 +31,7 @@
 #include <Ethernet.h>
 #include <EEPROM.h>
 #include <RCTransmit.h>
+#include <NTPRealTime.h>
 
 #define transmitPin 10
 
@@ -47,6 +48,8 @@ const unsigned int localPort = 8888;
 EthernetServer server(localPort);
 
 RCTransmit transmit = RCTransmit(transmitPin);
+NTPRealTime ntp = NTPRealTime();
+IPAddress timeServer(132, 163, 4, 101);
 
 typedef struct 
 {
@@ -69,6 +72,10 @@ void setup()
   transmit.setProtocol(1);
   transmit.setPulseLength(260);
   transmit.setRepeatTransmit(6);
+  // Setup NTP RealTime
+  ntp.init(timeServer, localPort);
+  ntp.setSyncInterval(300);
+  ntp.summertime(true);
   // Init cahc and load switchen from EEPROM into it
   initCache();
   loadSwitchesFromMemory();
@@ -81,6 +88,11 @@ void setup()
 void loop()
 {
   EthernetClient client = server.available();
+  Serial.print(ntp.getHour());
+  Serial.print(":");
+  Serial.print(ntp.getMin());
+  Serial.print(":");
+  Serial.println(ntp.getSec()); 
   if(!client)
   {
     delay(100);
