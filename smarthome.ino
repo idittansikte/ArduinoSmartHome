@@ -39,7 +39,7 @@
  * CACHE_SIZE can't be more than 550. If it is the cache 
  * won't fit in the EEPROM.
  */
-#define CACHE_SIZE 200
+#define CACHE_SIZE 124
 
 byte mac[] = {  
   0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
@@ -55,9 +55,13 @@ typedef struct
 {
   int controller;
   boolean status;
+  int hour;
+  int minute;
 } switch_type;
 
 switch_type switch_cache[CACHE_SIZE];
+boolean cacheStringUptoDate=false;
+String cacheString;
 
 void setup()
 {
@@ -88,11 +92,6 @@ void setup()
 void loop()
 {
   EthernetClient client = server.available();
-  Serial.print(ntp.getHour());
-  Serial.print(":");
-  Serial.print(ntp.getMin());
-  Serial.print(":");
-  Serial.println(ntp.getSec()); 
   if(!client)
   {
     delay(100);
@@ -161,18 +160,21 @@ void executeRequest(EthernetClient* client, char* request)
 
 	sendResponse(client, "OK");
 	// Save switch state
-        addSwitch(controller);
-	saveSwitchStatus(controller, on);
+        addSwitchToCache(controller);
+	cacheSwitchStatus(controller, on);
 	break;
       }
     case 'G': // Send back saved switch_cache and their states
       {
-	sendResponse(client, cacheToString());
+        if(!cacheStringUptoDate)
+          cacheToString();
+          
+	sendResponse(client, cacheString);
 	break;
       } 
     case 'A': // Add switch and its states
       {
-	if(addSwitch(atoi(strtok_r(request, ":", &request))))
+	if(addSwitchToCache(atoi(strtok_r(request, ":", &request))))
 	  {
 	    sendResponse(client, "OK");
 	    saveSwitchesToMemory();
@@ -185,7 +187,7 @@ void executeRequest(EthernetClient* client, char* request)
       } 
     case 'R': // Remove switch states
       {
-	if(removeSwitch(atoi(strtok_r(request, ":", &request))))
+	if(removeSwitchFromCache(atoi(strtok_r(request, ":", &request))))
 	  {
 	    sendResponse(client, "OK");
 	    saveSwitchesToMemory();
@@ -201,6 +203,7 @@ void executeRequest(EthernetClient* client, char* request)
          sendResponse(client, "OK");
          break;
       }
+      case 'T': // Set Timers
     default:
       {
 	sendResponse(client, "NO SUCH COMMAND EXIST");
@@ -209,21 +212,21 @@ void executeRequest(EthernetClient* client, char* request)
     }
 }
 
-void saveSwitchStatus(unsigned controller, int status)
+void cacheSwitchStatus(unsigned controller, int status)
 {
   int i = 0;
-  for(; i < CACHE_SIZE; ++i)
+  for(; i < CACHE_SIZE; ++i) // Go through cache
     {
-      //If controller 
+      //If controller found
       if(switch_cache[i].controller == controller)
 	{
+             // Set status
             if (status == 1)
 	      switch_cache[i].status = true;
             else
               switch_cache[i].status = false;
               
-              Serial.print("Switch status set to: ");
-              Serial.println(status);
+            cacheStringUptoDate = false;
 	}
     }
 }
@@ -232,7 +235,7 @@ void saveSwitchStatus(unsigned controller, int status)
  * Add switch to cache.
  * Returns false is there is no room left, else true.
  */
-boolean addSwitch(int controller)
+boolean addSwitchToCache(int controller)
 {
   int pos = 0;
   int savedPos = -1;
@@ -243,10 +246,8 @@ boolean addSwitch(int controller)
 	{
 	  savedPos = pos; // store empty pos to later
 	}
-
-      if(switch_cache[pos].controller == controller)
+      else if (switch_cache[pos].controller == controller) // If controller already exists
       {
-         Serial.println("Controller already exist.");
          return false; 
       }
     }
@@ -258,10 +259,11 @@ boolean addSwitch(int controller)
       switch_cache[savedPos].controller = controller;
       switch_cache[savedPos].status = false;
       Serial.println("Controller added.");
+      cacheStringUptoDate=false;
       return true;
     }
     
-  // If this is reached there is no room
+  // If this is the chache is full and we dont add it...
   return false;
 }
 
@@ -269,7 +271,7 @@ boolean addSwitch(int controller)
  * Remove switch from cache.
  * Returns false if not found else true.
  */
-boolean removeSwitch(int controller)
+boolean removeSwitchFromCache(int controller)
 {
   int position = 0;
   for(; position < CACHE_SIZE; ++position)
@@ -277,6 +279,7 @@ boolean removeSwitch(int controller)
       if(switch_cache[position].controller == controller) // If found 
 	{
 	  switch_cache[position].controller = -1; // Remove it
+          cacheStringUptoDate=false;
 	  return true;
 	}
     }
@@ -284,23 +287,24 @@ boolean removeSwitch(int controller)
   return false;
 }
 
-String cacheToString()
+void cacheToString()
 {
-  String tmpString = "";
-  for(int i = 0; i < CACHE_SIZE; ++i)
+  cacheString = "";
+  for(int i = 0; i < CACHE_SIZE; ++i) // For each entry in chache
     {
-      if(switch_cache[i].controller != -1)
+      if(switch_cache[i].controller != -1) // If controller at position
 	{
-  	  tmpString += switch_cache[i].controller;
-          tmpString += ":";
+          // Append it to cacheString...
+  	  cacheString += switch_cache[i].controller;
+          cacheString += ":";
           if(switch_cache[i].status)
-            tmpString += "1";
+            cacheString += "1";
           else
-            tmpString += "0";
-          tmpString += ":";
+            cacheString += "0";
+          cacheString += ":";
         }
     }
-  return tmpString;
+  cacheStringUptoDate=true;
 }
 
 /*
@@ -353,5 +357,7 @@ void initCache()
    for(int i = 0; i < CACHE_SIZE; ++i)
    {
       switch_cache[i].controller = -1;
+      switch_cache[i].hour = -1;
+      switch_cache[i].minute = -1;
    } 
 }
