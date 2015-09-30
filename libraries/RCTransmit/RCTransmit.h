@@ -46,7 +46,7 @@
 class RCTransmit 
 {
 public:
-  RCTransmit() = delete;
+  RCTransmit();
   RCTransmit(int transmitPin);
 
   void setProtocol(int protocol);

@@ -28,9 +28,10 @@ void NTPRealTime::summertime(bool summertime){
   mSummertime = summertime;
 }
 
-bool NTPRealTime::init(IPAddress timeserver, int port){
+void NTPRealTime::init(IPAddress timeserver, int port){
   mUdp.begin(port);
   mTimeServer = timeserver;
+  fetchNTPTime();
 }
 
 void NTPRealTime::setSyncInterval(int seconds){
@@ -41,9 +42,10 @@ bool NTPRealTime::fetchNTPTime(){
   sendNTPpacket(mTimeServer);
   delay(300); // 
   // Test for answer 10 times before exit
+  Serial.print("Trying to reach NTP server...");
   for(int i = 0; i < 10; ++i)
     {
-      
+      Serial.println(i);
       if( mUdp.parsePacket() )
 	{
 	  //buffer to hold incoming and outgoing packets 
@@ -64,6 +66,7 @@ bool NTPRealTime::fetchNTPTime(){
 	  // subtract seventy years:                            
 	  mUnixTime = secsSince1900 - seventyYears;
 	  mLastSync = millis();
+	  Serial.println("NTP server OK!...");
 	  return true;
 	}
       delay(300); 
@@ -98,19 +101,18 @@ unsigned long NTPRealTime::sendNTPpacket(IPAddress& address)
   return 1;
 }
 
-int NTPRealTime::getHour(){
+uint8_t NTPRealTime::getHour(){
   refreshCache(now());
   // UTC is the time at Greenwich Meridian (GMT)
   // return the hour (86400 equals secs per day)
   return tm.Hour;
 }
-
-int NTPRealTime::getMin(){
+uint8_t NTPRealTime::getMin(){
   refreshCache(now());
   return tm.Minute;
 }
 
-int NTPRealTime::getSec(){
+uint8_t NTPRealTime::getSec(){
   refreshCache(now());
   return tm.Second;
 }
@@ -137,7 +139,7 @@ void NTPRealTime::breakTime(time_t timeInput){
   time /= 60; // now it is minutes
   tm.Minute = time % 60;
   time /= 60; // now it is hours
-  tm.Hour = (time % 24) + mTimezone;
+  tm.Hour = ((time + mTimezone) % 24);
   time /= 24; // now it is days
   tm.Wday = ((time + 4) % 7) + 1;  // Sunday is day 1 
   
@@ -177,6 +179,7 @@ void NTPRealTime::breakTime(time_t timeInput){
   if(mSummertime){
     if(tm.Month >= 4 && tm.Month <= 10){
       tm.Hour += 1;
+      tm.Hour = tm.Hour % 24;
     }
   }
 }

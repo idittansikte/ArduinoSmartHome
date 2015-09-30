@@ -30,14 +30,14 @@ class NTPRealTime {
   
   NTPRealTime();
 
-  bool init(IPAddress timeserver, int port);
+  void init(IPAddress timeserver, int port);
   void setSyncInterval(int seconds);
   void setTimezone(int8_t timezone);
   void summertime(bool summertime);
 
-  int getHour();
-  int getMin();
-  int getSec();
+  uint8_t getHour();
+  uint8_t getMin();
+  uint8_t getSec();
 
   time_t now();
  private:

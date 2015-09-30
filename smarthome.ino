@@ -1,6 +1,6 @@
 
 
-/*
+/* Serial: ttyACM1
 * Transmitting
 * 
 * Starts with high for DELAY_SHORT (260) us and low for DELAY_START (2675) us
@@ -32,6 +32,7 @@
 #include <EEPROM.h>
 #include <RCTransmit.h>
 #include <NTPRealTime.h>
+#include <AVL_tree.h>
 
 #define transmitPin 10
 
@@ -39,7 +40,9 @@
  * CACHE_SIZE can't be more than 550. If it is the cache 
  * won't fit in the EEPROM.
  */
-#define CACHE_SIZE 124
+#define CACHE_SIZE 70
+#define TIMER_CHECK_INTERVAL 30 // Seconds
+#define EMPTY 255
 
 byte mac[] = {  
   0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
@@ -47,30 +50,29 @@ IPAddress ip(192, 168, 1, 151);
 const unsigned int localPort = 8888;
 EthernetServer server(localPort);
 
+AVL_tree* tree;
 RCTransmit transmit = RCTransmit(transmitPin);
 NTPRealTime ntp = NTPRealTime();
 IPAddress timeServer(132, 163, 4, 101);
 
-typedef struct 
-{
-  int controller;
-  boolean status;
-  int hour;
-  int minute;
-} switch_type;
+unsigned long lastTimerCheck; // Seconds
 
-switch_type switch_cache[CACHE_SIZE];
-boolean cacheStringUptoDate=false;
-String cacheString;
+void readRequest(EthernetClient* client, char* request);
+void executeRequest(EthernetClient* client, char* request);
+void sendResponse(EthernetClient* client, String response);
+boolean setTimer(char* request);
+void checkTimers(TreeNode* node);
 
 void setup()
 {
+  // EEPROM.write(0, 0);
+  Serial.println(F("Setup initialized!"));
    // Setup serial for debug
   Serial.begin(9600);
   // Setup ethernet and server
   Ethernet.begin(mac,ip) ;
   server.begin();
-  Serial.print("Server address:");
+  Serial.print(F("Server address:"));
   Serial.println(Ethernet.localIP());
   // Setup RCtransmit
   transmit.setProtocol(1);
@@ -80,38 +82,41 @@ void setup()
   ntp.init(timeServer, localPort);
   ntp.setSyncInterval(300);
   ntp.summertime(true);
-  // Init cahc and load switchen from EEPROM into it
-  initCache();
-  loadSwitchesFromMemory();
-  Serial.println("Cache initialized!");
-  Serial.println("Setup finished!");
+  // Load avl-cache...
+  tree = new AVL_tree(CACHE_SIZE);
+  Serial.println(F("Cache initialized!"));
+  Serial.println(F("Setup finished!"));
 }
-
-//char test[] = "S:35235:1";
 
 void loop()
 {
   EthernetClient client = server.available();
+  tree->ForEach(checkTimers);
+  //char tmp[] = "66:23:00:11:30:1:2:3:4:5:6";
+  //setTimer(tmp);
+  //delay(10000);
   if(!client)
   {
     delay(100);
     return ;
   }
   
-  Serial.println("Client connected!");
+  Serial.println(F("Client connected!"));
   // Handle client
-  char* request = readRequest(&client);
+  char request[80];
+  readRequest(&client, request);
   executeRequest(&client, request);
+
   // Close connection
   client.stop();
-  Serial.println("Client disconnected!");
+  Serial.println(F("Client disconnected!"));
 }
 
 // Read request line
-char* readRequest(EthernetClient* client)
+void readRequest(EthernetClient* client, char* request)
 {
   //String request = "";
-  char request[80];
+  //char request[80];
   int i = 0;
   //Loop while the client is connected
   while(client->connected())
@@ -122,14 +127,15 @@ char* readRequest(EthernetClient* client)
        // Read byte
        char c = client->read();
        
-       Serial.write(c);
+       //Serial.write(c);
        
        // Exit if end of line
        if('\n' == c || '\0' == c)
        {
-         request[i] == '\0';
-         char* d = request;
-         return d; 
+         request[i] = '\0';
+         //char* d = request;
+         //return &request[0]; 
+	 return;
        }
        
        // Add byte to request line
@@ -142,42 +148,40 @@ char* readRequest(EthernetClient* client)
 void executeRequest(EthernetClient* client, char* request)
 {
   char* command  = strtok_r(request, ":", &request);
-  Serial.print("Command: ");
+  Serial.println(F("#####################"));
+  Serial.print(F("Command: "));
   Serial.println(command[0]);
   switch(command[0])
     {
     case 'S': //Switch on/off
       {
 	// Get controller code
-	unsigned controller = 0;
-	unsigned int on = 0;
-	controller = atoi(strtok_r(request, ":", &request));
+	byte controller = 0;
+	byte on = 0;
+	controller = byte(atoi(strtok_r(request, ":", &request)));
 	on = atoi(strtok_r(request, ":", &request));
-	if(on == 1)
+	if(on == 1){
 	  transmit.switchOn(controller, 0, 0);
-	else
+	  tree->SetStatus(controller, 1);
+	}
+	else{
 	  transmit.switchOff(controller, 0, 0);
-
+	  tree->SetStatus(controller, 0);
+	}
 	sendResponse(client, "OK");
-	// Save switch state
-        addSwitchToCache(controller);
-	cacheSwitchStatus(controller, on);
 	break;
       }
-    case 'G': // Send back saved switch_cache and their states
+    case 'G': // Send all saved nodes
       {
-        if(!cacheStringUptoDate)
-          cacheToString();
-          
-	sendResponse(client, cacheString);
+        tree->SendNodes(client);
 	break;
       } 
-    case 'A': // Add switch and its states
+    case 'A': // Add switch
       {
-	if(addSwitchToCache(atoi(strtok_r(request, ":", &request))))
+	byte id = byte(atoi(strtok_r(request, ":", &request)));
+	if( id > 0 && id < 255 && tree->Insert(id))
 	  {
 	    sendResponse(client, "OK");
-	    saveSwitchesToMemory();
 	  }
 	else
 	  {
@@ -187,10 +191,10 @@ void executeRequest(EthernetClient* client, char* request)
       } 
     case 'R': // Remove switch states
       {
-	if(removeSwitchFromCache(atoi(strtok_r(request, ":", &request))))
+	byte id = byte(atoi(strtok_r(request, ":", &request)));
+	if( id > 0 && id < 255 && tree->Remove(id) )
 	  {
 	    sendResponse(client, "OK");
-	    saveSwitchesToMemory();
 	  }
 	else
 	  {
@@ -203,7 +207,22 @@ void executeRequest(EthernetClient* client, char* request)
          sendResponse(client, "OK");
          break;
       }
-      case 'T': // Set Timers
+      case 'T': // Set/Add Timer => timerid:onHour:onMinute:offHour:offMinute:switchidN:switchidK:....:switchidZ:
+      {
+        if( setTimer(request) ){
+	  sendResponse(client, "OK");
+	}else{
+	  sendResponse(client, "NOK");
+	}
+	break;
+      }
+      case 'Q': // Remove Timer => timerid
+      {
+	byte timerid = atoi(strtok_r(request, ":", &request));
+        tree->RemoveTimer(timerid);
+	sendResponse(client, "OK");
+	break;
+      }
     default:
       {
 	sendResponse(client, "NO SUCH COMMAND EXIST");
@@ -212,152 +231,78 @@ void executeRequest(EthernetClient* client, char* request)
     }
 }
 
-void cacheSwitchStatus(unsigned controller, int status)
-{
-  int i = 0;
-  for(; i < CACHE_SIZE; ++i) // Go through cache
-    {
-      //If controller found
-      if(switch_cache[i].controller == controller)
-	{
-             // Set status
-            if (status == 1)
-	      switch_cache[i].status = true;
-            else
-              switch_cache[i].status = false;
-              
-            cacheStringUptoDate = false;
-	}
-    }
-}
-
-/*
- * Add switch to cache.
- * Returns false is there is no room left, else true.
- */
-boolean addSwitchToCache(int controller)
-{
-  int pos = 0;
-  int savedPos = -1;
-  // Find empty pos and look for identical switch
-  for(; pos < CACHE_SIZE; ++pos)
-    {
-      if(switch_cache[pos].controller == -1) // If empty
-	{
-	  savedPos = pos; // store empty pos to later
-	}
-      else if (switch_cache[pos].controller == controller) // If controller already exists
-      {
-         return false; 
-      }
-    }
-    
-    // If not full
-  if(savedPos != -1)
-    {
-      // Save switch in cache
-      switch_cache[savedPos].controller = controller;
-      switch_cache[savedPos].status = false;
-      Serial.println("Controller added.");
-      cacheStringUptoDate=false;
-      return true;
-    }
-    
-  // If this is the chache is full and we dont add it...
-  return false;
-}
-
-/*
- * Remove switch from cache.
- * Returns false if not found else true.
- */
-boolean removeSwitchFromCache(int controller)
-{
-  int position = 0;
-  for(; position < CACHE_SIZE; ++position)
-    {
-      if(switch_cache[position].controller == controller) // If found 
-	{
-	  switch_cache[position].controller = -1; // Remove it
-          cacheStringUptoDate=false;
-	  return true;
-	}
-    }
-    // If not f
-  return false;
-}
-
-void cacheToString()
-{
-  cacheString = "";
-  for(int i = 0; i < CACHE_SIZE; ++i) // For each entry in chache
-    {
-      if(switch_cache[i].controller != -1) // If controller at position
-	{
-          // Append it to cacheString...
-  	  cacheString += switch_cache[i].controller;
-          cacheString += ":";
-          if(switch_cache[i].status)
-            cacheString += "1";
-          else
-            cacheString += "0";
-          cacheString += ":";
-        }
-    }
-  cacheStringUptoDate=true;
-}
-
-/*
- * Save switch_cache in cache into EEPROM
- * This is done when any changes have been done to cache.
- */
-void saveSwitchesToMemory()
-{
-  int addr = 1; // Current EEPROM address
-  int position = 0; // Array position
-  while(position < CACHE_SIZE)
-  {
-    int controller = switch_cache[position].controller;
-    boolean status = switch_cache[position].status;
-    if(controller != -1){
-      EEPROM.write(addr++, controller);
-    }
-    ++position;
-    EEPROM.write(0, addr-1);
-  }
-}
-
-/*
- * Load switch_cache in EEPROM into cache.
- * This should only be done at setup state.
- */
-void loadSwitchesFromMemory()
-{
-  int count = EEPROM.read(0); // How many switch_cache in memory
-  int addr = 1; // Current EEPROM address
-  int pos = 0; // switch_cache pos
-  while(addr <= count)
-  {
-     // Read controller
-     switch_cache[pos++].controller = EEPROM.read(addr++);
-  }
-}
-
 void sendResponse(EthernetClient* client, String response)
 {
 	// Send response to client.
 	client->println(response);
 	// Debug print.
-	Serial.print("sendResponse:");
+	Serial.print(F("sendResponse: "));
 	Serial.println(response);
 }
 
-void initCache()
-{
-   for(int i = 0; i < CACHE_SIZE; ++i)
-   {
-      switch_cache[i].controller = -1;
-      switch_cache[i].hour = -1;
-      switch_cache[i].minute = -1;
-   } 
+// Set Timer => timerid:onHour:onMinute:offHour:offMinute:switchidN:switchidK:....:switchidZ:
+boolean setTimer(char* request){
+  //byte(atoi());
+  byte timerid = atoi(strtok_r(request, ":", &request));
+  byte onHour = atoi(strtok_r(request, ":", &request));
+  byte onMinute = atoi(strtok_r(request, ":", &request));
+  byte offHour = atoi(strtok_r(request, ":", &request));
+  byte offMinute = atoi(strtok_r(request, ":", &request));
+  Serial.print(F("Adding timer with id: "));
+  Serial.println(timerid);
+  Serial.print(F(" onHour: "));
+  Serial.println(onHour);
+  Serial.print(F(" onMinute: "));
+  Serial.println(onMinute);
+  Serial.print(F(" offHour: "));
+  Serial.println(offHour);
+  Serial.print(F(" offMinute: "));
+  Serial.println(offMinute);
+  byte switchids[tree->Size()+1];
+  byte i = 0;
+  while(request){
+    byte swId = byte(atoi(strtok_r(request, ":", &request)));
+    if(swId >= 10 && swId <= 250){
+      switchids[i++] = swId;
+      Serial.print("Switch: ");
+      Serial.println(switchids[i-1]);
+    }
+  }
+  switchids[i] = 0; // Mark end
+  byte * p = switchids;
+  tree->SetTimer(p, timerid, onHour, onMinute, offHour, offMinute);
+  return true;
+}
+
+void checkTimers(TreeNode* node){
+  // If recent
+  //Serial.print("Time since last check: ");
+  //Serial.println((millis()/1000)-lastTimerCheck);
+  if(!((millis()/1000)-lastTimerCheck >= TIMER_CHECK_INTERVAL))
+    return;
+  Serial.print(F("Time: "));
+  Serial.print(ntp.getHour());
+  Serial.print(F(":"));
+  Serial.println(ntp.getMin());
+  // If not recent
+  if(node->timerid != EMPTY)
+    {
+      if( node->offHour == ntp.getHour() )
+	{
+	  if( node->offMinute == ntp.getMin() )
+	    {
+	      transmit.switchOff(node->d, 0, 0);
+	      node->status = false;
+	    }
+	}
+      else if( node->onHour == ntp.getHour() )
+	{
+	  if( node->onMinute == ntp.getMin() )
+	    {
+	      transmit.switchOn(node->d, 0, 0);
+	      node->status = true;
+	    }
+	}
+    }
+  lastTimerCheck = millis()/1000;
 }
