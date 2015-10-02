@@ -22,7 +22,7 @@ typedef struct TreeNode{
   TreeNode() { left = right = NULL; }
 } *Node;
 
-typedef void(*ExternalFunction)(Node);
+typedef void(*ExternalFunction)(Node&);
 
 class AVL_tree{
  public:
@@ -63,7 +63,7 @@ class AVL_tree{
   Node ExtractMin(Node& node);
   Node Remove(Node& node, data d);
   Node& Find(Node& node, data d);
-  void ForEach(Node node, ExternalFunction externalFunc);
+  void ForEach(Node& node, ExternalFunction externalFunc);
   void SendNodes(Node node, EthernetClient* client);
   void RemoveTimer(Node node, const byte& timerid);
   Node root; 

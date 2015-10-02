@@ -61,7 +61,8 @@ void readRequest(EthernetClient* client, char* request);
 void executeRequest(EthernetClient* client, char* request);
 void sendResponse(EthernetClient* client, String response);
 boolean setTimer(char* request);
-void checkTimers(TreeNode* node);
+void checkTimers(TreeNode*& node);
+boolean timeToCheckTimers();
 
 void setup()
 {
@@ -91,7 +92,8 @@ void setup()
 void loop()
 {
   EthernetClient client = server.available();
-  tree->ForEach(checkTimers);
+  if(timeToCheckTimers())
+    tree->ForEach(checkTimers);
   //char tmp[] = "66:23:00:11:30:1:2:3:4:5:6";
   //setTimer(tmp);
   //delay(10000);
@@ -274,35 +276,37 @@ boolean setTimer(char* request){
   return true;
 }
 
-void checkTimers(TreeNode* node){
-  // If recent
-  //Serial.print("Time since last check: ");
-  //Serial.println((millis()/1000)-lastTimerCheck);
+boolean timeToCheckTimers()
+{
   if(!((millis()/1000)-lastTimerCheck >= TIMER_CHECK_INTERVAL))
-    return;
+    return false;
+
   Serial.print(F("Time: "));
   Serial.print(ntp.getHour());
   Serial.print(F(":"));
   Serial.println(ntp.getMin());
+
+  lastTimerCheck = millis()/1000;
+  return true;
+}
+
+void checkTimers(TreeNode*& node){
+  Serial.print(F("Checking time for timer id: "));
+  Serial.println(node->d);
   // If not recent
   if(node->timerid != EMPTY)
     {
-      if( node->offHour == ntp.getHour() )
+      Serial.print(F("Timer id is not empty for node: "));
+      Serial.println(node->d);
+      if( int(node->offHour) == int(ntp.getHour()) &&  int(node->offMinute) == int(ntp.getMin()))
 	{
-	  if( node->offMinute == ntp.getMin() )
-	    {
-	      transmit.switchOff(node->d, 0, 0);
-	      node->status = false;
-	    }
+	  transmit.switchOff(node->d, 0, 0);
+	  node->status = false;
 	}
-      else if( node->onHour == ntp.getHour() )
+      else if( int(node->onHour) == int(ntp.getHour()) && int(node->onMinute) == int(ntp.getMin()))
 	{
-	  if( node->onMinute == ntp.getMin() )
-	    {
-	      transmit.switchOn(node->d, 0, 0);
-	      node->status = true;
-	    }
+	  transmit.switchOn(node->d, 0, 0);
+	  node->status = true;
 	}
     }
-  lastTimerCheck = millis()/1000;
 }

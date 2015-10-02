@@ -242,12 +242,15 @@ void AVL_tree::ForEach(ExternalFunction externalFunc){
   ForEach(root, externalFunc);
 }
 
-void AVL_tree::ForEach(Node node, ExternalFunction externalFunc){
-  if(node){
-    ForEach(node->left, externalFunc);
-    externalFunc(node);
-    ForEach(node->right, externalFunc);
-  }
+void AVL_tree::ForEach(Node& node, ExternalFunction externalFunc){
+  if(node != NULL)
+    {
+      Serial.print(F("(ForEach)Checking node:"));
+      Serial.println(node->d);
+      ForEach(node->left, externalFunc);
+      ForEach(node->right, externalFunc);
+      externalFunc(node);
+    }
 }
 
 void AVL_tree::SendNodes(EthernetClient* client){
