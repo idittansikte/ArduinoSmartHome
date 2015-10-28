@@ -76,9 +76,9 @@ void setup()
   Serial.print(F("Server address:"));
   Serial.println(Ethernet.localIP());
   // Setup RCtransmit
-  transmit.setProtocol(1);
-  transmit.setPulseLength(260);
-  transmit.setRepeatTransmit(6);
+  //transmit.setProtocol(1);
+  //transmit.setPulseLength(260);
+  transmit.setRepeatTransmit(5);
   // Setup NTP RealTime
   ntp.init(timeServer, localPort);
   ntp.setSyncInterval(300);
@@ -163,11 +163,11 @@ void executeRequest(EthernetClient* client, char* request)
 	controller = byte(atoi(strtok_r(request, ":", &request)));
 	on = atoi(strtok_r(request, ":", &request));
 	if(on == 1){
-	  transmit.switchOn(controller, 0, 0);
+	  transmit.switchOn(controller, 2, 0, 0);
 	  tree->SetStatus(controller, 1);
 	}
 	else{
-	  transmit.switchOff(controller, 0, 0);
+	  transmit.switchOff(controller, 2, 0, 0);
 	  tree->SetStatus(controller, 0);
 	}
 	sendResponse(client, "OK");
@@ -300,12 +300,12 @@ void checkTimers(TreeNode*& node){
       Serial.println(node->d);
       if( int(node->offHour) == int(ntp.getHour()) &&  int(node->offMinute) == int(ntp.getMin()))
 	{
-	  transmit.switchOff(node->d, 0, 0);
+	  transmit.switchOff(node->d,1, 0, 0);
 	  node->status = false;
 	}
       else if( int(node->onHour) == int(ntp.getHour()) && int(node->onMinute) == int(ntp.getMin()))
 	{
-	  transmit.switchOn(node->d, 0, 0);
+	  transmit.switchOn(node->d,1, 0, 0);
 	  node->status = true;
 	}
     }
