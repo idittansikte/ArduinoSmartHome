@@ -30,8 +30,8 @@ class AVL_tree{
   AVL_tree(byte maxSize);
   ~AVL_tree();
 
-  boolean Insert(Node node);
-  boolean Insert(data d);
+  boolean Insert(Node node, bool save = true);
+  boolean Insert(data d, bool save = true);
   Node& Find(data d);
   boolean Contains(data id);
   boolean Remove(data d);
@@ -41,8 +41,8 @@ class AVL_tree{
   void ForEach(ExternalFunction externalFunc);
   boolean IsEmpty() const;
   // TODO: Add saveEEPROM(Node node) ( and use it where it could be used )
-  void saveEEPROM();
-  void loadEEPROM();
+  void saveEEPROM(); // Saves all nodes in cache to EEPROM
+  void loadEEPROM(); // Loads all nodes from EEPROM
   void SendNodes(EthernetClient* client);
   void SetStatus(byte id, byte status);
   byte Size(){return mSize;}
@@ -50,9 +50,11 @@ class AVL_tree{
   void RemoveTimer(const byte& timerid);
 
  private:
-  void saveEEPROM(Node node, unsigned int*& addr);
-  Node Insert(Node& node, Node& newNode);
-  Node Insert(Node& node, data d);
+  void saveAllEEPROM(Node node, unsigned int& addr);
+  void saveEEPROM(Node node, unsigned int& addr);
+  void saveEEPROM(Node node);
+  Node Insert(Node& node, Node& newNode, bool save);
+  Node Insert(Node& node, data d, bool save);
   int Height(Node node);
   void RotateLeft(Node& node);
   void RotateRight(Node& node);

@@ -40,13 +40,14 @@
  * CACHE_SIZE can't be more than 550. If it is the cache 
  * won't fit in the EEPROM.
  */
-#define CACHE_SIZE 70
+#define CACHE_SIZE 40
 #define TIMER_CHECK_INTERVAL 30 // Seconds
+#define DHCP_RENEW_INTERVAL 60 // Seconds
 #define EMPTY 255
 
 byte mac[] = {  
-  0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-IPAddress ip(192, 168, 1, 151);
+  0x00, 0x26, 0x77, 0xA4, 0xF7, 0x4C };
+// IPAddress ip(192, 168, 1, 151);
 const unsigned int localPort = 8888;
 EthernetServer server(localPort);
 
@@ -56,6 +57,7 @@ NTPRealTime ntp = NTPRealTime();
 IPAddress timeServer(132, 163, 4, 101);
 
 unsigned long lastTimerCheck; // Seconds
+unsigned long lastDHCPRenew; // Seconds
 
 void readRequest(EthernetClient* client, char* request);
 void executeRequest(EthernetClient* client, char* request);
@@ -63,6 +65,7 @@ void sendResponse(EthernetClient* client, String response);
 boolean setTimer(char* request);
 void checkTimers(TreeNode*& node);
 boolean timeToCheckTimers();
+boolean maintainDHCP();
 
 void setup()
 {
@@ -71,13 +74,15 @@ void setup()
    // Setup serial for debug
   Serial.begin(9600);
   // Setup ethernet and server
-  Ethernet.begin(mac,ip) ;
+  // Ethernet.begin(mac,ip) ;
+  while( Ethernet.begin(mac) != 1 ){
+    delay(5000);
+  }
   server.begin();
   Serial.print(F("Server address:"));
   Serial.println(Ethernet.localIP());
+
   // Setup RCtransmit
-  //transmit.setProtocol(1);
-  //transmit.setPulseLength(260);
   transmit.setRepeatTransmit(5);
   // Setup NTP RealTime
   ntp.init(timeServer, localPort);
@@ -92,11 +97,15 @@ void setup()
 void loop()
 {
   EthernetClient client = server.available();
+  
+  // Check if any timers are go
   if(timeToCheckTimers())
     tree->ForEach(checkTimers);
-  //char tmp[] = "66:23:00:11:30:1:2:3:4:5:6";
-  //setTimer(tmp);
-  //delay(10000);
+
+  // Renew DHCP lease
+  maintainDHCP();
+
+  // Check if any requests
   if(!client)
   {
     delay(100);
@@ -150,7 +159,7 @@ void readRequest(EthernetClient* client, char* request)
 void executeRequest(EthernetClient* client, char* request)
 {
   char* command  = strtok_r(request, ":", &request);
-  Serial.println(F("#####################"));
+  Serial.println(F("######### Serving client ############"));
   Serial.print(F("Command: "));
   Serial.println(command[0]);
   switch(command[0])
@@ -251,13 +260,13 @@ boolean setTimer(char* request){
   byte offHour = atoi(strtok_r(request, ":", &request));
   byte offMinute = atoi(strtok_r(request, ":", &request));
   Serial.print(F("Adding timer with id: "));
-  Serial.println(timerid);
+  Serial.print(timerid);
   Serial.print(F(" onHour: "));
-  Serial.println(onHour);
+  Serial.print(onHour);
   Serial.print(F(" onMinute: "));
-  Serial.println(onMinute);
+  Serial.print(onMinute);
   Serial.print(F(" offHour: "));
-  Serial.println(offHour);
+  Serial.print(offHour);
   Serial.print(F(" offMinute: "));
   Serial.println(offMinute);
   byte switchids[tree->Size()+1];
@@ -291,13 +300,20 @@ boolean timeToCheckTimers()
 }
 
 void checkTimers(TreeNode*& node){
-  Serial.print(F("Checking time for timer id: "));
+  Serial.print(F("Checking timer for id: "));
   Serial.println(node->d);
   // If not recent
   if(node->timerid != EMPTY)
     {
-      Serial.print(F("Timer id is not empty for node: "));
-      Serial.println(node->d);
+      Serial.print(F(" Had timer! Time on: "));
+      Serial.print(node->onHour);
+      Serial.print(F(":"));
+      Serial.print(node->onMinute);
+      Serial.print(F(" Time off: "));
+      Serial.print(node->offHour);
+      Serial.print(F(":"));
+      Serial.print(node->offMinute);
+      Serial.println(F("."));
       if( int(node->offHour) == int(ntp.getHour()) &&  int(node->offMinute) == int(ntp.getMin()))
 	{
 	  transmit.switchOff(node->d,1, 0, 0);
@@ -309,4 +325,21 @@ void checkTimers(TreeNode*& node){
 	  node->status = true;
 	}
     }
+}
+
+boolean maintainDHCP(){
+  if((millis()/1000)-lastDHCPRenew >= DHCP_RENEW_INTERVAL){
+    lastDHCPRenew = millis()/1000;
+    int returnCode = Ethernet.maintain();
+    while (!(returnCode == 0 || returnCode == 2)){
+      switch(returnCode) {
+      case 1:   Serial.print(F("\n\rDHCP: Renew failed")); break;
+      case 3:   Serial.print(F("\n\rDHCP: Rebind fail")); break;
+      case 4:   Serial.print(F("\n\rDHCP: Rebind success")); break;
+      }
+      delay(5000);
+      returnCode = Ethernet.maintain();
+    }
+  }
+  return true;
 }

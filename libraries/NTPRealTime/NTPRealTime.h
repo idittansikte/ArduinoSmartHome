@@ -40,7 +40,9 @@ class NTPRealTime {
   uint8_t getSec();
 
   time_t now();
+
  private:
+  void adjustToSummerTime();
   bool fetchNTPTime();
   time_t sendNTPpacket(IPAddress& address);
 

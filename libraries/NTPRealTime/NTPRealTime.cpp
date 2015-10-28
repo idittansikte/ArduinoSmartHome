@@ -177,10 +177,37 @@ void NTPRealTime::breakTime(time_t timeInput){
   tm.Day = time + 1;     // day of month
 
   if(mSummertime){
-    if(tm.Month >= 4 && tm.Month <= 10){
-      tm.Hour += 1;
-      tm.Hour = tm.Hour % 24;
+    if(tm.Month >= 3 && tm.Month <= 10){
+      switch(tm.Year){
+      case 2015:
+	if (!((tm.Month == 3 && tm.Day < 29) || (tm.Month == 10 && tm.Day >= 25)))
+	  adjustToSummerTime();
+	break;
+      case 2016:
+	if (!((tm.Month == 3 && tm.Day < 27) || (tm.Month == 10 && tm.Day >= 30)))
+	  adjustToSummerTime();
+	break;
+      case 2017:
+	if (!((tm.Month == 3 && tm.Day < 26) || (tm.Month == 10 && tm.Day >= 29)))
+	  adjustToSummerTime();
+	break;
+      case 2018:
+	if (!((tm.Month == 3 && tm.Day < 25) || (tm.Month == 10 && tm.Day >= 28)))
+	  adjustToSummerTime();
+	break;
+      default:
+	if (!((tm.Month == 3 && tm.Day < 31) || (tm.Month == 10 && tm.Day >= 27)))
+	  adjustToSummerTime();
+	break;
+      }
     }
   }
 }
+
+void NTPRealTime::adjustToSummerTime(){
+  tm.Hour += 1;
+  tm.Hour = tm.Hour % 24;
+}
+
+
 

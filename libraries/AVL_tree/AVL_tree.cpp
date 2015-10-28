@@ -27,7 +27,7 @@ void AVL_tree::Balance(Node& node)
     }
 }
 
-boolean AVL_tree::Insert(data d){
+boolean AVL_tree::Insert(data d, bool saveEEPROM){
   if(mMaxSize < mSize)
     return false;
   if(IsEmpty()){
@@ -35,32 +35,33 @@ boolean AVL_tree::Insert(data d){
     return true;
   }
   else{
-    Insert(root, d);
+    Insert(root, d, saveEEPROM);
     return true;
   }
 }
 
-Node AVL_tree::Insert(Node& node, data d){
+Node AVL_tree::Insert(Node& node, data d, bool save){
   if(node == NULL){ // If empty, insert it...
     node = new TreeNode(d);
     node->status = false;
     node->timerid = 255;
     ++mSize;
-    saveEEPROM();
+    if(save)
+      saveEEPROM(node);
     return node;
   }
   /* Now check if we should go left or right */
   else if(d < node->d){ // If left
-    Insert(node->left, d);
+    Insert(node->left, d, save);
   }
   else if(d > node->d){ // If right
-    Insert(node->right, d);
+    Insert(node->right, d, save);
   }
   Balance(node);
   return node;
 }
 
-boolean AVL_tree::Insert(Node node){
+boolean AVL_tree::Insert(Node node, bool save){
   if(mMaxSize < mSize)
     return false;
 
@@ -69,25 +70,26 @@ boolean AVL_tree::Insert(Node node){
     return true;
   }
   else{
-    Insert(root, node);
+    Insert(root, node, save);
     return true;
   }
 }
 
 
-Node AVL_tree::Insert(Node& node, Node& newNode){
+Node AVL_tree::Insert(Node& node, Node& newNode, bool save){
   if(node == NULL){ // If empty, insert it...
     node = newNode;
     ++mSize;
-    saveEEPROM();
+    if(save)
+      saveEEPROM(node);
     return node;
   }
   /* Now check if we should go left or right */
   else if(newNode->d < node->d){ // If left
-    Insert(node->left, newNode);
+    Insert(node->left, newNode, save);
   }
   else if(newNode->d > node->d){ // If right
-    Insert(node->right, newNode);
+    Insert(node->right, newNode, save);
   }
   Balance(node);
   return node;
@@ -245,8 +247,6 @@ void AVL_tree::ForEach(ExternalFunction externalFunc){
 void AVL_tree::ForEach(Node& node, ExternalFunction externalFunc){
   if(node != NULL)
     {
-      Serial.print(F("(ForEach)Checking node:"));
-      Serial.println(node->d);
       ForEach(node->left, externalFunc);
       ForEach(node->right, externalFunc);
       externalFunc(node);
@@ -308,21 +308,51 @@ void AVL_tree::SendNodes(Node node, EthernetClient* client){
 void AVL_tree::saveEEPROM()
 {
   unsigned int addr = 1;
-  unsigned int* intptr = &addr;
-  saveEEPROM(root, intptr);
+  saveAllEEPROM(root, addr);
   EEPROM.write(0, mSize);
 }
 
-void AVL_tree::saveEEPROM(Node node, unsigned int*& addr)
-{
-
+void AVL_tree::saveAllEEPROM(Node node, unsigned int& addr){
   if (node == NULL)
     return;
 
+  saveEEPROM(node, addr);
+
+  saveAllEEPROM(node->left, addr);
+  saveAllEEPROM(node->right, addr);
+}
+
+
+// NEW
+void AVL_tree::saveEEPROM(Node node){
+  byte count = EEPROM.read(0); // How many switches in memory
+  byte bytePerNode = 5;
+  bool found = false;
+  for(unsigned int i = 1; i <= count; ++i){
+    unsigned int startAddr = (i * bytePerNode) - (bytePerNode - 1);
+    if(EEPROM.read(startAddr) == node->d){
+      saveEEPROM(node, startAddr);
+      found = true;
+      break;
+    }
+  }
+  if(!found){
+    unsigned int addr = (count * bytePerNode) + 1;
+    saveEEPROM(node, addr);
+    EEPROM.write(0, mSize);
+  }
+}
+
+void AVL_tree::saveEEPROM(Node node, unsigned int& addr)
+{
+  Serial.print(F("Saving... ID: "));
+  Serial.print( node->d );
+  Serial.print(F(", First Addr: "));
+  Serial.print( addr );
   // Byte 1: Write controller
-  EEPROM.write((*addr)++, node->d);
+  EEPROM.write((addr)++, node->d);
   // Byte 2: | TId | TId | TId | TId | TId | TId | TId | TId | 
-  EEPROM.write((*addr)++, node->timerid);
+  EEPROM.write((addr)++, node->timerid);
   // Byte 3: | OnM1| OnM0| OnH4| OnH3| OnH2| OnH1| OnH0|Status| 
   byte tmp = B00000011 & node->onMinute; // Get 2 least significant bits;
   tmp = tmp << 5;                  // Get space for onHour
@@ -332,26 +362,24 @@ void AVL_tree::saveEEPROM(Node node, unsigned int*& addr)
     tmp = tmp | B00000001;
   else
     tmp = tmp | B00000000;
-  EEPROM.write((*addr)++, tmp); 
+  EEPROM.write((addr)++, tmp); 
   // Byte 4: |OffH3|OffH2|OffH1|OffH0| OnM5| OnM4| OnM3| OnM2| 0-3 offHour, 2-5 onMinute
   tmp = B00001111 & node->offHour; // Insert 4 first bits
   tmp = tmp << 4;
   byte rest = B00111100 & node->onMinute;// Parse what's left of onMinute
   rest = rest >> 2;
   tmp = tmp | rest;                // Insert rest at front
-  EEPROM.write((*addr)++, tmp);
+  EEPROM.write((addr)++, tmp);
   //Byte 5: |NONE |OffM5|OffM4|OffM3|OffM2|OffM1|OffM0|OffH4|
   tmp = B00111111 & node->offMinute;
   tmp = tmp << 1;
   rest = B00010000 & node->offHour;
   rest = rest >> 4;
   tmp = tmp | rest;
-  EEPROM.write((*addr)++, tmp);
-  Serial.print(F("Saved..."));
-  Serial.print(F(" addr..."));
-  Serial.println( *addr );
-  saveEEPROM(node->left, addr);
-  saveEEPROM(node->right, addr);
+  EEPROM.write(addr, tmp);
+  Serial.print(F(", Last Addr: "));
+  Serial.print( addr );
+  Serial.println(F(" ... DONE!"));
 }
 
 /*
@@ -403,7 +431,7 @@ void AVL_tree::loadEEPROM()
      tmp = in & B01111110;
      tmp = tmp >> 1;
      newNode->offMinute = tmp;
-     Insert(root, newNode);
+     Insert(root, newNode, false);
      Serial.print(F("Loaded..."));
      Serial.print(loaded_count);
      Serial.print(F(" addr..."));
@@ -417,18 +445,18 @@ void AVL_tree::SetStatus(byte id, byte status)
 {
   TreeNode* node = Find(id);
   if(node == NULL){
-    Serial.println("Node NOT Found!");
+    Serial.println(F("Node NOT Found!"));
     return;
   }
-  Serial.println("Node Found! ID: ");
+  Serial.println(F("Node Found! ID: "));
   Serial.println(node->d);
   if (status == 1){
     node->status = true;
-    Serial.println("Status true!");
+    Serial.println(F("Status true!"));
   }
   else{
     node->status = false;
-    Serial.println("Status false!");
+    Serial.println(F("Status false!"));
   }
 }
 
@@ -440,7 +468,8 @@ void AVL_tree::SetTimer(byte*& id_arr, byte timerid, byte onHour, byte onMinute,
       Node node = Find(*id_arr);
       if( node != NULL)
 	{
-	  Serial.println("Setting timer on node...");
+	  Serial.print(F("Setting timer on node: "));
+	  Serial.println(node->d);
 	  node->timerid = timerid;
 	  node->onHour = onHour;
 	  node->onMinute = onMinute;
